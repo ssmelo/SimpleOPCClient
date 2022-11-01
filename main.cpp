@@ -1,27 +1,3 @@
-// Simple OPC Client
-//
-// This is a modified version of the "Simple OPC Client" originally
-// developed by Philippe Gras (CERN) for demonstrating the basic techniques
-// involved in the development of an OPC DA client.
-//
-// The modifications are the introduction of two C++ classes to allow the
-// the client to ask for callback notifications from the OPC server, and
-// the corresponding introduction of a message comsumption loop in the
-// main program to allow the client to process those notifications. The
-// C++ classes implement the OPC DA 1.0 IAdviseSink and the OPC DA 2.0
-// IOPCDataCallback client interfaces, and in turn were adapted from the
-// KEPWARE´s  OPC client sample code. A few wrapper functions to initiate
-// and to cancel the notifications were also developed.
-//
-// The original Simple OPC Client code can still be found (as of this date)
-// in
-//        http://pgras.home.cern.ch/pgras/OPCClientTutorial/
-//
-//
-// Luiz T. S. Mendes - DELT/UFMG - 15 Sept 2011
-// luizt at cpdee.ufmg.br
-//
-
 #include <atlbase.h>    // required for using the "_T" macro
 #include <iostream>
 #include <ObjIdl.h>
@@ -53,9 +29,6 @@ using namespace std;
 #define VT VT_R4
 
 // Global variables
-
-// The OPC DA Spec requires that some constants be registered in order to use
-// them. The one below refers to the OPC DA 1.0 IDataObject interface.
 UINT OPC_DATA_TIME = RegisterClipboardFormat(_T("OPCSTMFORMATDATATIME"));
 
 wchar_t ITEM_ID[] = L"Saw-toothed Waves.Real4";
@@ -69,9 +42,6 @@ wchar_t BUCKET_BRIGADE_INT4[] = L"Bucket Brigade.Int4";
 
 
 //////////////////////////////////////////////////////////////////////
-// Read the value of an item on an OPC server. 
-//
-//shared_ptr<SOCDataCallback> local_instance = globalInstance;
 IOPCServer* pIOPCServer = NULL;   //pointer to IOPServer interface
 IOPCItemMgt* pIOPCItemMgt = NULL; //pointer to IOPCItemMgt interface
 
@@ -80,10 +50,11 @@ OPCHANDLE hServerTempPreAque;  // server handle to the Temperatura da zona de pr
 OPCHANDLE hServerTempAque;  // server handle to the Temperatura da zona de pré aquecimento
 OPCHANDLE hServerTempEnch;  // server handle to the Temperatura da zona de pré aquecimento
 OPCHANDLE hServerFlowGas;  // server handle to the Temperatura da zona de pré aquecimento
-OPCHANDLE hSPServerTempPreAque;  // server handle to the Temperatura da zona de pré aquecimento
-OPCHANDLE hSPServerTempAque;  // server handle to the Temperatura da zona de pré aquecimento
-OPCHANDLE hSPServerTempEnch;  // server handle to the Temperatura da zona de pré aquecimento
+OPCHANDLE hSPServerTempPreAque;  // server handle to the SP Temperatura da zona de pré aquecimento
+OPCHANDLE hSPServerTempAque;  // server handle to the SP Temperatura da zona de aquecimento
+OPCHANDLE hSPServerTempEnch;  // server handle to the SP Temperatura da zona de enchimento
 
+// Mutexes
 std::mutex mtxtempZAque;
 std::mutex mtxtempZPreAque;
 std::mutex mtxtempEnch;
@@ -111,7 +82,7 @@ void main()
 	printf("Adicionando grupo em estado INACTIVE...\n");
 	AddTheGroup(pIOPCServer, pIOPCItemMgt, hServerGroup, GROUP_NAME);
 
-	// Add the OPC item. First we have to convert from wchar_t* to char*
+	// Add the OPC items. First we have to convert from wchar_t* to char*
 	// in order to print the item name in the console.
 	printf("Adicionando itens para o grupo...\n");
 	size_t m;
@@ -177,7 +148,7 @@ void main()
 	pIConnectionPoint->Release();
 	pSOCDataCallback->Release();
 
-	// Remove the OPC item:
+	// Remove the OPC items:
 	wcstombs_s(&m, buf, 100, TEMP_Z_AQUE, _TRUNCATE);
 	printf("Removendo o item OPC %s...\n", buf);
 	RemoveItem(pIOPCItemMgt, hServerTempAque);
@@ -430,6 +401,7 @@ void RemoveGroup(IOPCServer* pIOPCServer, OPCHANDLE hServerGroup)
 	}
 }
 
+// Thread de client sockets
 void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 {
 	
@@ -503,33 +475,38 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 		AllMutexLock();
 		strncpy(msgdados, dados, TAMMSGDADOS + 1);
 		status = send(sock, msgdados, TAMMSGDADOS, 0);
+		if (status >= 0) {
+			printf("\n[ENVIO] Dados da malha para o servidor:\n%s\n\n", msgdados);
+		}
+		AllMutexUnlock();
 		while (status < 0) {
-			AllMutexUnlock();
-			SOCKET okRetry = retryToSocket();
-			if (!okRetry)
+			sock = retryToSocket();
+			if (!sock)
 				exit(0);
 			sequencia = 1;
 			std::string seq = FormatZero(msgTamI, to_string(sequencia));
 			std::string strmsgdados = seq += ";0000;" + ftzaque + ";" += ftzpreaque + ";" += ftench + ";" += fflowgas;
+			char* dados = &strmsgdados[0];
+			strncpy(msgdados, dados, TAMMSGDADOS + 1);
 			status = send(sock, msgdados, TAMMSGDADOS, 0);
 		}
-		printf("[ENVIO] Dados da malha para o servidor:\n%s\n\n", msgdados);
-		AllMutexUnlock();
-
+		
 		AllMutexLock();
 		memset(buf, 0, sizeof(buf));
 		status = recv(sock, buf, TAMMSGACK, 0);
+		if (status >= 0) {
+			strncpy(msgack, buf, TAMMSGACK + 1);
+			printf("[RECEBIDO] ACK dados da malha:\n%s\n\n", msgack);
+		}
+		AllMutexUnlock();
 		while (status < 0) {
 			AllMutexUnlock();
-			SOCKET okRetry = retryToSocket();
-			if (!okRetry)
+			sock = retryToSocket();
+			if (!sock)
 				exit(0);
 			sequencia = 1;
 			break;
 		}
-		strncpy(msgack, buf, TAMMSGACK + 1);
-		printf("[RECEBIDO] ACK dados da malha:\n%s\n\n", msgack);
-		AllMutexUnlock();
 
 		sequencia = sequencia + 2;
 
@@ -542,35 +519,42 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 			AllMutexLock();
 			strncpy(msgreq, req, TAMMSGREQ + 1);
 			status = send(sock, msgreq, TAMMSGREQ, 0);
+			if (status >= 0) {
+				printf("\n\n\n[ENVIO] Set-points das malhas:\n%s\n\n", msgreq);
+			}
+			AllMutexUnlock();
 			while (status < 0) {
 				AllMutexUnlock();
-				SOCKET okRetry = retryToSocket();
-				if (!okRetry)
+				sock = retryToSocket();
+				if (!sock)
 					exit(0);
 				sequencia = 1;
 				seq = FormatZero(msgTamI, to_string(sequencia));
 				std::string strmsgreq = seq += ";1100";
 				char* req = &strmsgreq[0];
+				strncpy(msgreq, req, TAMMSGREQ + 1);
 				status = send(sock, msgreq, TAMMSGREQ, 0);
 			}
-			printf("\n\n\n[ENVIO] Set-points das malhas:\n%s\n\n", msgreq);
-			AllMutexUnlock();
 
 			AllMutexLock();
 			memset(buf, 0, sizeof(buf));
 			status = recv(sock, buf, TAMMSGSP, 0);
+			if (status >= 0) {
+				strncpy(msgsp, buf, TAMMSGSP + 1);
+
+				printf("[RECEBIDO] Set-points das malhas:\n%s\n\n", msgsp);
+			}
+			AllMutexUnlock();
 			while (status < 0) {
 				AllMutexUnlock();
-				SOCKET okRetry = retryToSocket();
-				if (!okRetry)
+				sock = retryToSocket();
+				if (!sock)
 					exit(0);
 				sequencia = 1;
 				break;
 			}
-			strncpy(msgsp, buf, TAMMSGSP + 1);
+
 			sequencia = sequencia + 2;
-			printf("[RECEBIDO] Set-points das malhas:\n%s\n\n", msgsp);
-			AllMutexUnlock();
 
 			seq = FormatZero(msgTamI, to_string(sequencia));
 			std::string stracksp = seq += ";0011";
@@ -579,6 +563,10 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 			AllMutexLock();
 			strncpy(msgacksp, acksp, TAMMSGACKSP + 1);
 			status = send(sock, msgacksp, TAMMSGACKSP, 0);
+			if (status >= 0) {
+				printf("Mensagem enviada ao servidor:\n%s\n\n", msgacksp);
+			}
+			AllMutexUnlock();
 			while (status < 0) {
 				AllMutexUnlock();
 				SOCKET okRetry = retryToSocket();
@@ -588,11 +576,10 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 				seq = FormatZero(msgTamI, to_string(sequencia));
 				std::string stracksp = seq += ";0011";
 				char* acksp = &stracksp[0];
+				strncpy(msgacksp, acksp, TAMMSGACKSP + 1);
 				status = send(sock, msgacksp, TAMMSGACKSP, 0);
 			}
 			sequencia++;
-			printf("Mensagem enviada ao servidor:\n%s\n\n", msgacksp);
-			AllMutexUnlock();
 
 			std::string strMessage(msgsp);
 			std::stringstream strMessageStream(strMessage);
