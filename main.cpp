@@ -63,11 +63,19 @@ std::mutex mtxtecla;
 
 SOCKET sock;
 
+char ipaddr[100];
+int port = 0;
+
 void main()
 {
 
 	int i;
 	char buf[100];
+
+	printf("Insira o endereco de IP do server:\n");
+	scanf("%99s", ipaddr);
+	printf("Insira a porta do server:\n");
+	scanf("%d", &port);
 
 	// Have to be done before using microsoft COM library:
 	printf("Inicializando o ambiente COM...\n");
@@ -659,7 +667,7 @@ SOCKET retryToSocket()
 		printf("\n\n\nTentando conectar ao servidor...\n");
 		sock = ConnectToSocket();
 		if (sock) {
-			printf("Conexão feita com sucesso!!!\n");
+			printf("Conexao feita com sucesso!!!\n");
 			return sock;
 		}			
 		this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -675,11 +683,10 @@ SOCKET ConnectToSocket()
 	//SOCKET      sock;
 	SOCKADDR_IN ServerAddr;
 
-	const char* ipaddr;
-	int     port, status;
+	int status;
 
-	ipaddr = "127.0.0.1";
-	port = 3445;
+	/*ipaddr = "127.0.0.1";
+	port = 3445;*/
 
 	status = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (status != 0) {
