@@ -556,7 +556,7 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 			printf("\n\n\n[ENVIO] Set-points das malhas:\n%s\n\n", msgreq);
 			AllMutexUnlock();
 
-			AllMutexUnlock();
+			AllMutexLock();
 			memset(buf, 0, sizeof(buf));
 			status = recv(sock, buf, TAMMSGSP, 0);
 			while (status < 0) {
@@ -576,7 +576,7 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 			std::string stracksp = seq += ";0011";
 			char* acksp = &stracksp[0];
 
-			AllMutexUnlock();
+			AllMutexLock();
 			strncpy(msgacksp, acksp, TAMMSGACKSP + 1);
 			status = send(sock, msgacksp, TAMMSGACKSP, 0);
 			while (status < 0) {
