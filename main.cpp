@@ -618,6 +618,14 @@ void runClient(SOCDataCallback* socDataCallback, IOPCItemMgt* pIOPCItemMgt)
 			WriteItem(pIOPCItemMgt, hSPServerTempEnch, *ench);
 
 		}
+		else if (tecla[0] == 'c') {
+			printf("Encerrando a conexao ...\n");
+			closesocket(sock);
+			WSACleanup();
+			printf("Conexao encerrada. Fim do programa.\n");
+
+			exit(0);
+		}
 		else if (tecla[0] == '0') {
 			continue;
 		}
